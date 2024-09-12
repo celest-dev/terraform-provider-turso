@@ -6,6 +6,7 @@ import (
 
 	"github.com/celest-dev/terraform-provider-turso/internal/resource_database"
 	"github.com/celest-dev/terraform-provider-turso/internal/tursoclient"
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -53,34 +54,34 @@ func (r *DatabaseResource) Configure(ctx context.Context, req resource.Configure
 }
 
 func (r *DatabaseResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
-	var plan resource_database.DatabaseModel
-	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	var data resource_database.DatabaseModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
 	tflog.Trace(ctx, "create database plan", map[string]interface{}{
-		"plan": plan,
+		"plan": data,
 	})
-	fmt.Printf("create database plan: %+v\n", plan)
+	fmt.Printf("create database plan: %+v\n", data)
 
 	var dbSeed tursoclient.OptCreateDatabaseInputSeed
-	if !plan.Seed.IsNull() && !plan.Seed.IsUnknown() {
+	if !data.Seed.IsNull() && !data.Seed.IsUnknown() {
 		dbSeed = tursoclient.NewOptCreateDatabaseInputSeed(tursoclient.CreateDatabaseInputSeed{
-			Type:      tursoclient.NewOptCreateDatabaseInputSeedType(tursoclient.CreateDatabaseInputSeedType(plan.Seed.SeedType.ValueString())),
-			Name:      optString(plan.Seed.Name),
-			URL:       optString(plan.Seed.Url),
-			Timestamp: optString(plan.Seed.Timestamp),
+			Type:      tursoclient.NewOptCreateDatabaseInputSeedType(tursoclient.CreateDatabaseInputSeedType(data.Seed.SeedType.ValueString())),
+			Name:      optString(data.Seed.Name),
+			URL:       optString(data.Seed.Url),
+			Timestamp: optString(data.Seed.Timestamp),
 		})
 	}
 
 	createReq := tursoclient.CreateDatabaseInput{
-		Name:      plan.Name.ValueString(),
-		Group:     plan.Group.ValueString(),
+		Name:      data.Name.ValueString(),
+		Group:     data.Group.ValueString(),
 		Seed:      dbSeed,
-		SizeLimit: optString(plan.SizeLimit),
-		IsSchema:  optBool(plan.IsSchema),
-		Schema:    optString(plan.Schema),
+		SizeLimit: optString(data.SizeLimit),
+		IsSchema:  optBool(data.IsSchema),
+		Schema:    optString(data.Schema),
 	}
 	tflog.Trace(ctx, "creating database", map[string]interface{}{
 		"request": createReq,
@@ -100,13 +101,13 @@ func (r *DatabaseResource) Create(ctx context.Context, req resource.CreateReques
 	}
 
 	dbName := string(db.Database.Value.Name.Value)
-	resp.Diagnostics.Append(r.readDatabase(ctx, dbName, &plan)...)
+	resp.Diagnostics.Append(r.readDatabase(ctx, dbName, &data)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
 	tflog.Trace(ctx, "created database resource")
-	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
 func (r *DatabaseResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
@@ -132,10 +133,7 @@ func (r *DatabaseResource) Update(ctx context.Context, req resource.UpdateReques
 
 func (r *DatabaseResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
 	var data resource_database.DatabaseModel
-
-	// Read Terraform prior state data into the model
 	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
-
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -189,22 +187,26 @@ func (r *DatabaseResource) readDatabase(ctx context.Context, name string, data *
 	if data.Seed.IsUnknown() {
 		data.Seed = resource_database.NewSeedValueNull()
 	}
-	data.Database = resource_database.DatabaseValue{
-		DbId:          types.StringValue(db.Database.Value.DbId.Value),
-		Name:          types.StringValue(db.Database.Value.Name.Value),
-		Group:         types.StringValue(db.Database.Value.Group.Value),
-		Hostname:      types.StringValue(db.Database.Value.Hostname.Value),
-		Regions:       encodeStringList(db.Database.Value.Regions),
-		PrimaryRegion: types.StringValue(db.Database.Value.PrimaryRegion.Value),
-		Schema:        types.StringValue(db.Database.Value.Schema.Value),
-		IsSchema:      types.BoolValue(db.Database.Value.IsSchema.Value),
-		DatabaseType:  types.StringValue(db.Database.Value.Type.Value),
-		Archived:      types.BoolValue(db.Database.Value.Archived.Value),
-		Version:       types.StringValue(db.Database.Value.Version.Value),
-		AllowAttach:   types.BoolValue(db.Database.Value.AllowAttach.Value),
-		BlockReads:    types.BoolValue(db.Database.Value.BlockReads.Value),
-		BlockWrites:   types.BoolValue(db.Database.Value.BlockWrites.Value),
+	dbVal, diags := resource_database.NewDatabaseValue(resource_database.DatabaseValue{}.AttributeTypes(ctx), map[string]attr.Value{
+		"db_id":          types.StringValue(db.Database.Value.DbId.Value),
+		"name":           types.StringValue(db.Database.Value.Name.Value),
+		"group":          types.StringValue(db.Database.Value.Group.Value),
+		"hostname":       types.StringValue(db.Database.Value.Hostname.Value),
+		"regions":        encodeStringList(db.Database.Value.Regions),
+		"primary_region": types.StringValue(db.Database.Value.PrimaryRegion.Value),
+		"schema":         types.StringValue(db.Database.Value.Schema.Value),
+		"is_schema":      types.BoolValue(db.Database.Value.IsSchema.Value),
+		"type":           types.StringValue(db.Database.Value.Type.Value),
+		"archived":       types.BoolValue(db.Database.Value.Archived.Value),
+		"version":        types.StringValue(db.Database.Value.Version.Value),
+		"allow_attach":   types.BoolValue(db.Database.Value.AllowAttach.Value),
+		"block_reads":    types.BoolValue(db.Database.Value.BlockReads.Value),
+		"block_writes":   types.BoolValue(db.Database.Value.BlockWrites.Value),
+	})
+	if diags.HasError() {
+		return diags
 	}
+	data.Database = dbVal
 
 	return nil
 }

@@ -26,6 +26,7 @@ func TestAccResourceDatabase(t *testing.T) {
 					statecheck.ExpectKnownValue("turso_database.test", tfjsonpath.New("id"), knownvalue.StringExact(name)),
 					statecheck.ExpectKnownValue("turso_database.test", tfjsonpath.New("name"), knownvalue.StringExact(name)),
 					statecheck.ExpectKnownValue("turso_database.test", tfjsonpath.New("group"), knownvalue.StringExact("test")),
+					statecheck.ExpectKnownValue("turso_database.test", tfjsonpath.New("database"), knownvalue.NotNull()),
 				},
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr("turso_database.test", "name", name),
