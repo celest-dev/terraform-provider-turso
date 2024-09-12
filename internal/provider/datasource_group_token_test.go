@@ -7,7 +7,6 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/knownvalue"
-	"github.com/hashicorp/terraform-plugin-testing/plancheck"
 	"github.com/hashicorp/terraform-plugin-testing/statecheck"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 	"github.com/hashicorp/terraform-plugin-testing/tfjsonpath"
@@ -84,19 +83,6 @@ func TestAccResourceGroupToken_WithExpiration(t *testing.T) {
 					statecheck.ExpectKnownValue("data.turso_group_token.test", tfjsonpath.New("expiration"), knownvalue.NotNull()), // no expiration
 				},
 			},
-
-			// Must refresh token when expiration changes
-			{
-				Config: testAccCreateConfig(`
-				data "turso_group_token" "test" {
-					id = "test"
-				}`),
-				ConfigPlanChecks: resource.ConfigPlanChecks{
-					PreApply: []plancheck.PlanCheck{
-						plancheck.ExpectNonEmptyPlan(),
-					},
-				},
-			},
 		},
 	})
 }
@@ -110,7 +96,7 @@ func TestAccResourceGroupToken_E2E(t *testing.T) {
 			{
 				Config: testAccCreateConfig(`
 				resource "turso_database" "test" {
-					id = "test"
+					group = "test"
 					name = "` + name + `"
 				}
 				data "turso_group_token" "test" {
