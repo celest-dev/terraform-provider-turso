@@ -65,14 +65,20 @@ func (r *DatabaseInstancesDataSource) Read(ctx context.Context, req datasource.R
 	}
 	instances := make([]attr.Value, len(res.Instances))
 	for i, instance := range res.Instances {
-		instances[i] = datasource_database_instances.InstancesValue{
-			Hostname:      basetypes.NewStringValue(instance.Hostname.Value),
-			Name:          basetypes.NewStringValue(instance.Name.Value),
-			Region:        basetypes.NewStringValue(instance.Region.Value),
-			InstancesType: basetypes.NewStringValue(string(instance.Type.Value)),
-			Uuid:          basetypes.NewStringValue(instance.UUID.Value),
-		}
+		instanceVal, diags := datasource_database_instances.NewInstancesValue(datasource_database_instances.InstancesValue{}.AttributeTypes(ctx), map[string]attr.Value{
+			"hostname": basetypes.NewStringValue(instance.Hostname.Value),
+			"name":     basetypes.NewStringValue(instance.Name.Value),
+			"region":   basetypes.NewStringValue(instance.Region.Value),
+			"type":     basetypes.NewStringValue(string(instance.Type.Value)),
+			"uuid":     basetypes.NewStringValue(instance.UUID.Value),
+		})
+		resp.Diagnostics.Append(diags...)
+		instances[i] = instanceVal
 	}
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
 	instancesTy := datasource_database_instances.InstancesValue{}.Type(ctx)
 	data.Instances = basetypes.NewListValueMust(instancesTy, instances)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)

@@ -1,7 +1,6 @@
 package provider
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
@@ -26,28 +25,9 @@ func TestAccDataSourceDatabaseInstances(t *testing.T) {
 				}`),
 				ConfigStateChecks: []statecheck.StateCheck{
 					statecheck.ExpectKnownValue("data.turso_database_instances.test", tfjsonpath.New("instances"), listNotEmpty{}),
+					statecheck.ExpectKnownValue("data.turso_database_instances.test", tfjsonpath.New("instances"), listOfNonNulls{}),
 				},
 			},
 		},
 	})
-}
-
-type listNotEmpty struct{}
-
-func (listNotEmpty) CheckValue(v any) error {
-	val, ok := v.([]any)
-
-	if !ok {
-		return fmt.Errorf("expected []any value for ListNotEmpty check, got: %T", v)
-	}
-
-	if len(val) == 0 {
-		return fmt.Errorf("expected non-empty list for ListNotEmpty check, but list was empty")
-	}
-
-	return nil
-}
-
-func (listNotEmpty) String() string {
-	return "non-empty list"
 }
