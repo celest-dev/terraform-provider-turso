@@ -1,0 +1,138 @@
+provider:
+  name: turso
+resources:
+  database:
+    create:
+      path: /v1/organizations/{organizationName}/databases
+      method: POST
+    read:
+      path: /v1/organizations/{organizationName}/databases/{databaseName}
+      method: GET
+    delete:
+      path: /v1/organizations/{organizationName}/databases/{databaseName}
+      method: DELETE
+    schema:
+      attributes:
+        aliases:
+          databaseName: id
+      ignores:
+        - organizationName
+  database_config:
+    create:
+      path: /v1/organizations/{organizationName}/databases/{databaseName}/configuration
+      method: PATCH
+    read:
+      path: /v1/organizations/{organizationName}/databases/{databaseName}/configuration
+      method: GET
+    schema:
+      attributes:
+        aliases:
+          databaseName: id
+      ignores:
+        - organizationName
+  # TODO: Maintained by hand for now
+  # The OpenAPI generator rejects the group location schemas and there is no other way
+  # to add locations to a group.
+  #
+  # group:
+  #   create:
+  #     path: /v1/organizations/{organizationName}/groups
+  #     method: POST
+  #   read:
+  #     path: /v1/organizations/{organizationName}/groups/{groupName}
+  #     method: GET
+  #   delete:
+  #     path: /v1/organizations/{organizationName}/groups/{groupName}
+  #     method: DELETE
+  #   schema:
+  #     attributes:
+  #       aliases:
+  #         groupName: id
+  #     ignores:
+  #       - organizationName
+data_sources:
+  database:
+    read:
+      path: /v1/organizations/{organizationName}/databases/{databaseName}
+      method: GET
+    schema:
+      attributes:
+        aliases:
+          databaseName: id
+      ignores:
+        - organizationName
+  database_instances:
+    read:
+      path: /v1/organizations/{organizationName}/databases/{databaseName}/instances
+      method: GET
+    schema:
+      attributes:
+        aliases:
+          databaseName: id
+      ignores:
+        - organizationName
+  database_instance:
+    read:
+      path: /v1/organizations/{organizationName}/databases/{databaseName}/instances/{instanceName}
+      method: GET
+    schema:
+      ignores:
+        - organizationName
+  databases:
+    read:
+      path: /v1/organizations/{organizationName}/databases
+      method: GET
+    schema:
+      ignores:
+        - organizationName
+  database_config:
+    read:
+      path: /v1/organizations/{organizationName}/databases/{databaseName}/configuration
+      method: GET
+    schema:
+      attributes:
+        aliases:
+          databaseName: id
+      ignores:
+        - organizationName
+  database_token:
+    read:
+      path: /v1/organizations/{organizationName}/databases/{databaseName}/auth/tokens
+      method: POST
+    schema:
+      attributes:
+        aliases:
+          databaseName: id
+      ignores:
+        - organizationName
+  group:
+    read:
+      path: /v1/organizations/{organizationName}/groups/{groupName}
+      method: GET
+    schema:
+      attributes:
+        aliases:
+          groupName: id
+      ignores:
+        - organizationName
+  groups:
+    read:
+      path: /v1/organizations/{organizationName}/groups
+      method: GET
+    schema:
+      ignores:
+        - organizationName
+  group_token:
+    read:
+      path: /v1/organizations/{organizationName}/groups/{groupName}/auth/tokens
+      method: POST
+    schema:
+      attributes:
+        aliases:
+          groupName: id
+      ignores:
+        - organizationName
+  locations:
+    read:
+      path: /v1/locations
+      method: GET

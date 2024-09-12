@@ -3,24 +3,13 @@ package provider
 import (
 	"context"
 	"fmt"
-	"strings"
 
-	"github.com/celest-dev/terraform-provider-turso/internal/tursoadmin"
-	"github.com/hashicorp/terraform-plugin-framework-timetypes/timetypes"
-	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
-	"github.com/hashicorp/terraform-plugin-framework/attr"
+	"github.com/celest-dev/terraform-provider-turso/internal/resource_database"
+	"github.com/celest-dev/terraform-provider-turso/internal/tursoclient"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/mapplanmodifier"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/objectplanmodifier"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
-	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
-	"github.com/hashicorp/terraform-plugin-framework/types/basetypes"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
 
@@ -33,61 +22,7 @@ func NewDatabaseResource() resource.Resource {
 }
 
 type DatabaseResource struct {
-	client *tursoadmin.Client
-}
-
-type DatabaseResourceModel struct {
-	Name        types.String `tfsdk:"name"`
-	Group       types.String `tfsdk:"group"`
-	Seed        types.Object `tfsdk:"seed"`
-	SizeLimit   types.String `tfsdk:"size_limit"`
-	IsSchema    types.Bool   `tfsdk:"is_schema"`
-	Schema      types.String `tfsdk:"schema"`
-	AllowAttach types.Bool   `tfsdk:"allow_attach"`
-	BlockReads  types.Bool   `tfsdk:"block_reads"`
-	BlockWrites types.Bool   `tfsdk:"block_writes"`
-
-	// Computed
-	DbId          types.String `tfsdk:"db_id"`
-	Hostname      types.String `tfsdk:"hostname"`
-	Type          types.String `tfsdk:"type"`
-	Version       types.String `tfsdk:"version"`
-	PrimaryRegion types.String `tfsdk:"primary_region"`
-	Instances     types.Map    `tfsdk:"instances"`
-}
-
-type DatabaseSeedModel struct {
-	Type      types.String      `tfsdk:"type"`
-	Name      types.String      `tfsdk:"name"`
-	URL       types.String      `tfsdk:"url"`
-	Timestamp timetypes.RFC3339 `tfsdk:"timestamp"`
-}
-
-func (DatabaseSeedModel) AttributeTypes() map[string]attr.Type {
-	return map[string]attr.Type{
-		"type":      types.StringType,
-		"name":      types.StringType,
-		"url":       types.StringType,
-		"timestamp": timetypes.RFC3339Type{},
-	}
-}
-
-type DatabaseInstanceModel struct {
-	UUID     types.String `tfsdk:"uuid"`
-	Name     types.String `tfsdk:"name"`
-	Type     types.String `tfsdk:"type"`
-	Region   types.String `tfsdk:"region"`
-	Hostname types.String `tfsdk:"hostname"`
-}
-
-func (DatabaseInstanceModel) AttributeTypes() map[string]attr.Type {
-	return map[string]attr.Type{
-		"uuid":     types.StringType,
-		"name":     types.StringType,
-		"type":     types.StringType,
-		"region":   types.StringType,
-		"hostname": types.StringType,
-	}
+	*tursoProviderConfig
 }
 
 func (r *DatabaseResource) Metadata(ctx context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -95,158 +30,7 @@ func (r *DatabaseResource) Metadata(ctx context.Context, req resource.MetadataRe
 }
 
 func (r *DatabaseResource) Schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) {
-	resp.Schema = schema.Schema{
-		MarkdownDescription: "Database resource",
-		Attributes: map[string]schema.Attribute{
-			"name": schema.StringAttribute{
-				MarkdownDescription: "The name of the new database. Must contain only lowercase letters, numbers, dashes. No longer than 32 characters.",
-				Required:            true,
-				PlanModifiers: []planmodifier.String{
-					stringplanmodifier.RequiresReplace(),
-				},
-			},
-			"group": schema.StringAttribute{
-				MarkdownDescription: "The name of the group where the database should be created. The group must already exist.",
-				Required:            true,
-				PlanModifiers: []planmodifier.String{
-					stringplanmodifier.RequiresReplace(),
-				},
-			},
-			"seed": schema.SingleNestedAttribute{
-				MarkdownDescription: "Seed configuration for the new database.",
-				Optional:            true,
-				Attributes: map[string]schema.Attribute{
-					"type": schema.StringAttribute{
-						MarkdownDescription: "The type of seed to be used to create a new database.",
-						Required:            true,
-						Validators: []validator.String{
-							stringvalidator.OneOf(string(tursoadmin.DatabaseSeedDatabase), string(tursoadmin.DatabaseSeedDump)),
-						},
-					},
-					"name": schema.StringAttribute{
-						MarkdownDescription: "The name of the existing database when `database` is used as a seed type.",
-						Optional:            true,
-						Validators: []validator.String{
-							stringvalidator.ConflictsWith(path.MatchRelative().AtParent().AtName("url")),
-							stringvalidator.AtLeastOneOf(path.MatchRelative(), path.MatchRelative().AtParent().AtName("url")),
-						},
-					},
-					"url": schema.StringAttribute{
-						MarkdownDescription: "The URL returned by [upload dump](https://docs.turso.tech/api-reference/databases/upload-dump) can be used with the `dump` seed type.",
-						Optional:            true,
-						Validators: []validator.String{
-							stringvalidator.ConflictsWith(path.MatchRelative().AtParent().AtName("name")),
-							stringvalidator.AtLeastOneOf(path.MatchRelative().AtParent().AtName("name"), path.MatchRelative()),
-						},
-					},
-					"timestamp": schema.StringAttribute{
-						MarkdownDescription: "A formatted ISO 8601 recovery point to create a database from. This must be within the last 24 hours, or 30 days on the scaler plan.",
-						Optional:            true,
-						CustomType:          timetypes.RFC3339Type{},
-					},
-				},
-				PlanModifiers: []planmodifier.Object{
-					objectplanmodifier.RequiresReplace(),
-				},
-			},
-			"size_limit": schema.StringAttribute{
-				MarkdownDescription: "The maximum size of the database in bytes. Values with units are also accepted, e.g. 1mb, 256mb, 1gb.",
-				Optional:            true,
-			},
-			"is_schema": schema.BoolAttribute{
-				MarkdownDescription: "Mark this database as the parent schema database that updates child databases with any schema changes.",
-				Optional:            true,
-			},
-			"schema": schema.StringAttribute{
-				MarkdownDescription: "The name of the parent database to use as the schema.",
-				Optional:            true,
-			},
-			"allow_attach": schema.BoolAttribute{
-				MarkdownDescription: "Allow attaching databases to this database.",
-				Optional:            true,
-				Computed:            true,
-				Default:             booldefault.StaticBool(false),
-			},
-			"block_reads": schema.BoolAttribute{
-				MarkdownDescription: "Block all read queries to the database.",
-				Optional:            true,
-				Computed:            true,
-				Default:             booldefault.StaticBool(false),
-			},
-			"block_writes": schema.BoolAttribute{
-				MarkdownDescription: "Block all write queries to the database.",
-				Optional:            true,
-				Computed:            true,
-				Default:             booldefault.StaticBool(false),
-			},
-			"db_id": schema.StringAttribute{
-				MarkdownDescription: "The database universal unique identifier (UUID).",
-				Computed:            true,
-				PlanModifiers: []planmodifier.String{
-					stringplanmodifier.UseStateForUnknown(),
-				},
-			},
-			"hostname": schema.StringAttribute{
-				MarkdownDescription: "The DNS hostname used for client libSQL and HTTP connections.",
-				Computed:            true,
-				PlanModifiers: []planmodifier.String{
-					stringplanmodifier.UseStateForUnknown(),
-				},
-			},
-			"type": schema.StringAttribute{
-				MarkdownDescription: "The string representing the object type. Default: `logical`.",
-				Computed:            true,
-				PlanModifiers: []planmodifier.String{
-					stringplanmodifier.UseStateForUnknown(),
-				},
-			},
-			"version": schema.StringAttribute{
-				MarkdownDescription: "The current libSQL version the database is running.",
-				Computed:            true,
-				PlanModifiers: []planmodifier.String{
-					stringplanmodifier.UseStateForUnknown(),
-				},
-			},
-			"primary_region": schema.StringAttribute{
-				MarkdownDescription: "The location code for the primary region this database is located.",
-				Computed:            true,
-				PlanModifiers: []planmodifier.String{
-					stringplanmodifier.UseStateForUnknown(),
-				},
-			},
-			"instances": schema.MapNestedAttribute{
-				MarkdownDescription: "The instance configurations for the database.",
-				Computed:            true,
-				NestedObject: schema.NestedAttributeObject{
-					Attributes: map[string]schema.Attribute{
-						"uuid": schema.StringAttribute{
-							MarkdownDescription: "The instance universal unique identifier (UUID).",
-							Computed:            true,
-						},
-						"name": schema.StringAttribute{
-							MarkdownDescription: "The name of the instance (location code).",
-							Computed:            true,
-						},
-						"type": schema.StringAttribute{
-							MarkdownDescription: "The type of database instance. One of: `primary` or `replica`.",
-							Computed:            true,
-						},
-						"region": schema.StringAttribute{
-							MarkdownDescription: "The location code for the region this instance is located.",
-							Computed:            true,
-						},
-						"hostname": schema.StringAttribute{
-							MarkdownDescription: "The DNS hostname used for client libSQL and HTTP connections (specific to this instance only).",
-							Computed:            true,
-						},
-					},
-				},
-				PlanModifiers: []planmodifier.Map{
-					mapplanmodifier.UseStateForUnknown(),
-				},
-			},
-		},
-	}
+	resp.Schema = resource_database.DatabaseResourceSchema(ctx)
 }
 
 func (r *DatabaseResource) Configure(ctx context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
@@ -255,7 +39,7 @@ func (r *DatabaseResource) Configure(ctx context.Context, req resource.Configure
 		return
 	}
 
-	client, ok := req.ProviderData.(*tursoadmin.Client)
+	client, ok := req.ProviderData.(*tursoProviderConfig)
 
 	if !ok {
 		resp.Diagnostics.AddError(
@@ -265,11 +49,11 @@ func (r *DatabaseResource) Configure(ctx context.Context, req resource.Configure
 		return
 	}
 
-	r.client = client
+	r.tursoProviderConfig = client
 }
 
 func (r *DatabaseResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
-	var plan DatabaseResourceModel
+	var plan resource_database.DatabaseModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -280,52 +64,43 @@ func (r *DatabaseResource) Create(ctx context.Context, req resource.CreateReques
 	})
 	fmt.Printf("create database plan: %+v\n", plan)
 
-	var dbSeed *tursoadmin.DatabaseSeed
+	var dbSeed tursoclient.OptCreateDatabaseInputSeed
 	if !plan.Seed.IsNull() && !plan.Seed.IsUnknown() {
-		var seedModel DatabaseSeedModel
-		resp.Diagnostics.Append(plan.Seed.As(ctx, &seedModel, basetypes.ObjectAsOptions{
-			UnhandledNullAsEmpty:    true,
-			UnhandledUnknownAsEmpty: true,
-		})...)
-		if resp.Diagnostics.HasError() {
-			return
-		}
-
-		dbSeed = &tursoadmin.DatabaseSeed{
-			Type: tursoadmin.DatabaseSeedType(seedModel.Type.ValueString()),
-			Name: seedModel.Name.ValueString(),
-			URL:  seedModel.URL.ValueString(),
-		}
-
-		// timestamp := seedModel.Timestamp
-		// if !timestamp.IsNull() && !timestamp.IsUnknown() {
-		// 	ts, diags := timestamp.ValueRFC3339Time()
-		// 	resp.Diagnostics.Append(diags...)
-		// 	if resp.Diagnostics.HasError() {
-		// 		return
-		// 	}
-		// 	dbSeed.Timestamp = ts
-		// }
+		dbSeed = tursoclient.NewOptCreateDatabaseInputSeed(tursoclient.CreateDatabaseInputSeed{
+			Type:      tursoclient.NewOptCreateDatabaseInputSeedType(tursoclient.CreateDatabaseInputSeedType(plan.Seed.SeedType.ValueString())),
+			Name:      optString(plan.Seed.Name),
+			URL:       optString(plan.Seed.Url),
+			Timestamp: optString(plan.Seed.Timestamp),
+		})
 	}
 
-	createReq := tursoadmin.CreateDatabaseRequest{
-		Name:           plan.Name.ValueString(),
-		Group:          plan.Group.ValueString(),
-		Seed:           dbSeed,
-		SizeLimit:      plan.SizeLimit.ValueString(),
-		IsSchema:       plan.IsSchema.ValueBool(),
-		SchemaDatabase: plan.Schema.ValueString(),
+	createReq := tursoclient.CreateDatabaseInput{
+		Name:      plan.Name.ValueString(),
+		Group:     plan.Group.ValueString(),
+		Seed:      dbSeed,
+		SizeLimit: optString(plan.SizeLimit),
+		IsSchema:  optBool(plan.IsSchema),
+		Schema:    optString(plan.Schema),
 	}
 	tflog.Trace(ctx, "creating database", map[string]interface{}{
 		"request": createReq,
 	})
 	fmt.Printf("creating database: %+v\n", createReq)
-	db, err := r.client.CreateDatabase(ctx, createReq)
+	res, err := r.Client.CreateDatabase(ctx, &createReq, tursoclient.CreateDatabaseParams{
+		OrganizationName: r.Organization,
+	})
 	if err != nil {
 		resp.Diagnostics.AddError("error creating database", err.Error())
 		return
 	}
-	resp.Diagnostics.Append(r.readDatabase(ctx, db.Name, &plan)...)
+	db, ok := res.(*tursoclient.CreateDatabaseOK)
+	if !ok {
+		resp.Diagnostics.AddError("error creating database", "unexpected response from server")
+		return
+	}
+
+	dbName := string(db.Database.Value.Name.Value)
+	resp.Diagnostics.Append(r.readDatabase(ctx, dbName, &plan)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -335,7 +110,7 @@ func (r *DatabaseResource) Create(ctx context.Context, req resource.CreateReques
 }
 
 func (r *DatabaseResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
-	var data DatabaseResourceModel
+	var data resource_database.DatabaseModel
 	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
 
 	if resp.Diagnostics.HasError() {
@@ -352,35 +127,11 @@ func (r *DatabaseResource) Read(ctx context.Context, req resource.ReadRequest, r
 }
 
 func (r *DatabaseResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	var data DatabaseResourceModel
-
-	// Read Terraform plan data into the model
-	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
-
-	if resp.Diagnostics.HasError() {
-		return
-	}
-
-	fmt.Printf("update database: %+v\n", data)
-	config, err := r.client.UpdateDatabaseConfiguration(ctx, data.Name.ValueString(), tursoadmin.DatabaseConfig{
-		SizeLimit:   data.SizeLimit.ValueStringPointer(),
-		AllowAttach: data.AllowAttach.ValueBoolPointer(),
-		BlockReads:  data.BlockReads.ValueBoolPointer(),
-		BlockWrites: data.BlockWrites.ValueBoolPointer(),
-	})
-	if err != nil {
-		resp.Diagnostics.AddError("client error", err.Error())
-		return
-	}
-
-	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("size_limit"), config.SizeLimit)...)
-	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("allow_attach"), config.AllowAttach)...)
-	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("block_reads"), config.BlockReads)...)
-	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("block_writes"), config.BlockWrites)...)
+	resp.Diagnostics.AddError("not implemented", "database resource does not support updates")
 }
 
 func (r *DatabaseResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
-	var data DatabaseResourceModel
+	var data resource_database.DatabaseModel
 
 	// Read Terraform prior state data into the model
 	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
@@ -390,7 +141,10 @@ func (r *DatabaseResource) Delete(ctx context.Context, req resource.DeleteReques
 	}
 
 	fmt.Printf("delete database: %+v\n", data)
-	err := r.client.DeleteDatabase(ctx, data.Name.ValueString())
+	_, err := r.Client.DeleteDatabase(ctx, tursoclient.DeleteDatabaseParams{
+		OrganizationName: r.Organization,
+		DatabaseName:     data.Name.ValueString(),
+	})
 	if err != nil {
 		resp.Diagnostics.AddError("client error", err.Error())
 		return
@@ -398,79 +152,59 @@ func (r *DatabaseResource) Delete(ctx context.Context, req resource.DeleteReques
 }
 
 func (r *DatabaseResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	tflog.Trace(ctx, fmt.Sprintf("importing database: %s", req.ID))
-
-	idParts := strings.Split(req.ID, "/")
-	if len(idParts) != 2 {
-		resp.Diagnostics.AddError("invalid import ID", fmt.Sprintf("expected format: group_name/database_name, got: %s", req.ID))
-		return
-	}
-
-	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("group"), idParts[0])...)
-	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("name"), idParts[1])...)
+	fmt.Printf("importing database: %+v\n", req)
+	resource.ImportStatePassthroughID(ctx, path.Root("name"), req, resp)
 }
 
-func (r *DatabaseResource) readDatabase(ctx context.Context, name string, data *DatabaseResourceModel) diag.Diagnostics {
-	db, err := r.client.GetDatabase(ctx, name)
+func (r *DatabaseResource) readDatabase(ctx context.Context, name string, data *resource_database.DatabaseModel) diag.Diagnostics {
+	resp, err := r.Client.GetDatabase(ctx, tursoclient.GetDatabaseParams{
+		OrganizationName: r.Organization,
+		DatabaseName:     name,
+	})
 	if err != nil {
 		return diag.Diagnostics{
 			diag.NewErrorDiagnostic("client error", err.Error()),
+		}
+	}
+	db, ok := resp.(*tursoclient.GetDatabaseOK)
+	if !ok {
+		return diag.Diagnostics{
+			diag.NewErrorDiagnostic("client error", "database not returned from server"),
 		}
 	}
 	fmt.Printf("read database: %+v\n", db)
 
-	data.DbId = types.StringValue(db.ID)
-	data.Hostname = types.StringValue(db.Hostname)
-	if data.Seed.IsUnknown() {
-		data.Seed = types.ObjectNull(DatabaseSeedModel{}.AttributeTypes())
-	}
+	data.Id = types.StringValue(db.Database.Value.Name.Value)
+	data.Name = types.StringValue(db.Database.Value.Name.Value)
+	data.Group = types.StringValue(db.Database.Value.Group.Value)
 	if data.SizeLimit.IsUnknown() {
 		data.SizeLimit = types.StringNull()
-	}
-	if !data.IsSchema.IsNull() && !data.IsSchema.IsUnknown() {
-		data.IsSchema = types.BoolValue(db.IsSchema)
-	} else {
-		data.IsSchema = types.BoolNull()
 	}
 	if data.Schema.IsUnknown() {
 		data.Schema = types.StringNull()
 	}
-	data.PrimaryRegion = types.StringValue(db.PrimaryRegion)
-	data.Type = types.StringValue(db.Type)
-	data.Version = types.StringValue(db.Version)
-	data.AllowAttach = types.BoolValue(db.AllowAttach)
-	data.BlockReads = types.BoolValue(db.BlockReads)
-	data.BlockWrites = types.BoolValue(db.BlockWrites)
-
-	instances, err := r.client.ListDatabaseInstances(ctx, db.Name)
-	if err != nil {
-		return diag.Diagnostics{
-			diag.NewErrorDiagnostic("client error", err.Error()),
-		}
+	if data.IsSchema.IsUnknown() {
+		data.IsSchema = types.BoolNull()
 	}
-	instanceElements := make(map[string]attr.Value)
-	for _, instance := range instances {
-		model := DatabaseInstanceModel{
-			UUID:     types.StringValue(instance.UUID),
-			Name:     types.StringValue(instance.Name),
-			Type:     types.StringValue(string(instance.Type)),
-			Region:   types.StringValue(instance.Region),
-			Hostname: types.StringValue(instance.Hostname),
-		}
-		element, diags := types.ObjectValueFrom(ctx, model.AttributeTypes(), model)
-		if diags.HasError() {
-			return diags
-		}
-		instanceElements[instance.Region] = element
+	if data.Seed.IsUnknown() {
+		data.Seed = resource_database.NewSeedValueNull()
 	}
-	instancesValue, diags := types.MapValue(
-		types.ObjectType{AttrTypes: DatabaseInstanceModel{}.AttributeTypes()},
-		instanceElements,
-	)
-	if diags.HasError() {
-		return diags
+	data.Database = resource_database.DatabaseValue{
+		DbId:          types.StringValue(db.Database.Value.DbId.Value),
+		Name:          types.StringValue(db.Database.Value.Name.Value),
+		Group:         types.StringValue(db.Database.Value.Group.Value),
+		Hostname:      types.StringValue(db.Database.Value.Hostname.Value),
+		Regions:       encodeStringList(db.Database.Value.Regions),
+		PrimaryRegion: types.StringValue(db.Database.Value.PrimaryRegion.Value),
+		Schema:        types.StringValue(db.Database.Value.Schema.Value),
+		IsSchema:      types.BoolValue(db.Database.Value.IsSchema.Value),
+		DatabaseType:  types.StringValue(db.Database.Value.Type.Value),
+		Archived:      types.BoolValue(db.Database.Value.Archived.Value),
+		Version:       types.StringValue(db.Database.Value.Version.Value),
+		AllowAttach:   types.BoolValue(db.Database.Value.AllowAttach.Value),
+		BlockReads:    types.BoolValue(db.Database.Value.BlockReads.Value),
+		BlockWrites:   types.BoolValue(db.Database.Value.BlockWrites.Value),
 	}
-	data.Instances = instancesValue
 
 	return nil
 }

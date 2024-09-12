@@ -3,12 +3,12 @@
 page_title: "turso_group Resource - turso"
 subcategory: ""
 description: |-
-  Turso group resource
+  
 ---
 
 # turso_group (Resource)
 
-Turso group resource
+
 
 
 
@@ -17,15 +17,27 @@ Turso group resource
 
 ### Required
 
-- `locations` (Set of String) The locations of the group.
-- `name` (String) The name of the group.
+- `locations` (Set of String) All locations for the new group.
+- `name` (String) The name of the new group.
+- `primary` (String) The primary location key for the new group.
 
 ### Optional
 
-- `primary` (String) The primary location of the group. Required if multiple `locations` are specified.
+- `extensions` (String) Set to `all` to enable all extensions.
+- `id` (String) The name of the group.
 
 ### Read-Only
 
-- `archived` (Boolean) Groups on the free tier go to sleep after some inactivity.
+- `group` (Attributes) (see [below for nested schema](#nestedatt--group))
+
+<a id="nestedatt--group"></a>
+### Nested Schema for `group`
+
+Read-Only:
+
+- `archived` (Boolean) Groups on the free tier get archived after some inactivity.
+- `locations` (Set of String) An array of location keys the group is located.
+- `name` (String) The group name, unique across your organization.
+- `primary` (String) The primary location key.
 - `uuid` (String) The group universal unique identifier (UUID).
 - `version` (String) The current libSQL server version the databases in that group are running.

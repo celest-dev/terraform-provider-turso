@@ -3,12 +3,12 @@
 page_title: "turso_database Data Source - turso"
 subcategory: ""
 description: |-
-  Database data source
+  
 ---
 
 # turso_database (Data Source)
 
-Database data source
+
 
 
 
@@ -17,9 +17,28 @@ Database data source
 
 ### Required
 
-- `name` (String) The name of the new database. Must contain only lowercase letters, numbers, dashes. No longer than 32 characters.
+- `id` (String) The name of the database.
 
 ### Read-Only
 
+- `database` (Attributes) (see [below for nested schema](#nestedatt--database))
+
+<a id="nestedatt--database"></a>
+### Nested Schema for `database`
+
+Read-Only:
+
+- `allow_attach` (Boolean) The current status for allowing the database to be attached to another.
+- `archived` (Boolean) The current status of the database. If `true`, the database is archived and requires a manual unarchive step.
+- `block_reads` (Boolean) The current status for blocked reads.
+- `block_writes` (Boolean) The current status for blocked writes.
 - `db_id` (String) The database universal unique identifier (UUID).
+- `group` (String) The name of the group the database belongs to.
 - `hostname` (String) The DNS hostname used for client libSQL and HTTP connections.
+- `is_schema` (Boolean) If this database controls other child databases then this will be `true`. See [Multi-DB Schemas](/features/multi-db-schemas).
+- `name` (String) The database name, **unique** across your organization.
+- `primary_region` (String) The primary region location code the group the database belongs to.
+- `regions` (List of String) A list of regions for the group the database belongs to.
+- `schema` (String) The name of the parent database that owns the schema for this database. See [Multi-DB Schemas](/features/multi-db-schemas).
+- `type` (String) The string representing the object type.
+- `version` (String) The current libSQL version the database is running.
