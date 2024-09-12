@@ -25,28 +25,26 @@ func TestAccResourceDatabaseToken_E2E(t *testing.T) {
 					group = "test"
 					name = "` + name + `"
 				}
-				resource "turso_database_token" "test" {
-					database = turso_database.test.name
+				data "turso_database_token" "test" {
+					id = turso_database.test.id
 				}`),
 				ConfigStateChecks: []statecheck.StateCheck{
-					statecheck.ExpectKnownValue("turso_database.test", tfjsonpath.New("instances"), knownvalue.MapSizeExact(1)),
-					statecheck.ExpectKnownValue("turso_database.test", tfjsonpath.New("hostname"), knownvalue.NotNull()),
-
-					statecheck.ExpectSensitiveValue("turso_database_token.test", tfjsonpath.New("token")),
-					statecheck.ExpectKnownValue("turso_database_token.test", tfjsonpath.New("token"), knownvalue.NotNull()),
-					statecheck.ExpectKnownValue("turso_database_token.test", tfjsonpath.New("expires_at"), knownvalue.Null()), // no expiration
+					statecheck.ExpectSensitiveValue("data.turso_database_token.test", tfjsonpath.New("jwt")),
+					statecheck.ExpectKnownValue("data.turso_database_token.test", tfjsonpath.New("jwt"), knownvalue.NotNull()),
+					statecheck.ExpectKnownValue("data.turso_database_token.test", tfjsonpath.New("expiration"), knownvalue.Null()), // no expiration
 				},
 				Check: func(s *terraform.State) error {
-					dbHostname, ok := s.RootModule().Resources["turso_database.test"].Primary.Attributes["hostname"]
+					dbName, ok := s.RootModule().Resources["turso_database.test"].Primary.Attributes["name"]
 					if !ok {
-						return fmt.Errorf("missing hostname")
+						return fmt.Errorf("missing database")
 					}
-					token, ok := s.RootModule().Resources["turso_database_token.test"].Primary.Attributes["token"]
+					token, ok := s.RootModule().Resources["data.turso_database_token.test"].Primary.Attributes["jwt"]
 					if !ok {
 						return fmt.Errorf("missing token")
 					}
 
-					connector, err := libsql.NewConnector("libsql://"+dbHostname, libsql.WithAuthToken(token))
+					dbUri := fmt.Sprintf("libsql://%s-celest-dev.turso.io", dbName)
+					connector, err := libsql.NewConnector(dbUri, libsql.WithAuthToken(token))
 					if err != nil {
 						return fmt.Errorf("error creating database connector: %v", err)
 					}

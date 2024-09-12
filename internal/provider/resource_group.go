@@ -5,12 +5,11 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/celest-dev/terraform-provider-turso/internal/tursoadmin"
+	"github.com/celest-dev/terraform-provider-turso/internal/resource_group"
+	"github.com/celest-dev/terraform-provider-turso/internal/tursoclient"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-framework/types/basetypes"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
@@ -26,29 +25,7 @@ func NewGroupResource() resource.Resource {
 }
 
 type GroupResource struct {
-	client *tursoadmin.Client
-}
-
-type GroupResourceModel struct {
-	// The group name, unique across your organization.
-	Name types.String `tfsdk:"name"`
-
-	// The primary location key.
-	Primary types.String `tfsdk:"primary"`
-
-	// The locations where the databases in the group are running.
-	Locations []types.String `tfsdk:"locations"`
-
-	// Computed
-
-	// The current libSQL server version the databases in that group are running.
-	Version types.String `tfsdk:"version"`
-
-	// The group universal unique identifier (UUID).
-	UUID types.String `tfsdk:"uuid"`
-
-	// Groups on the free tier go to sleep after some inactivity.
-	Archived types.Bool `tfsdk:"archived"`
+	*tursoProviderConfig
 }
 
 func (r *GroupResource) Metadata(ctx context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -56,43 +33,7 @@ func (r *GroupResource) Metadata(ctx context.Context, req resource.MetadataReque
 }
 
 func (r *GroupResource) Schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) {
-	resp.Schema = schema.Schema{
-		MarkdownDescription: "Turso group resource",
-
-		Attributes: map[string]schema.Attribute{
-			"name": schema.StringAttribute{
-				MarkdownDescription: "The name of the group.",
-				Required:            true,
-				PlanModifiers: []planmodifier.String{
-					stringplanmodifier.RequiresReplace(),
-				},
-			},
-			"primary": schema.StringAttribute{
-				MarkdownDescription: "The primary location of the group. Required if multiple `locations` are specified.",
-				Optional:            true,
-				PlanModifiers: []planmodifier.String{
-					stringplanmodifier.RequiresReplace(),
-				},
-			},
-			"locations": schema.SetAttribute{
-				MarkdownDescription: "The locations of the group.",
-				Required:            true,
-				ElementType:         basetypes.StringType{},
-			},
-			"version": schema.StringAttribute{
-				MarkdownDescription: "The current libSQL server version the databases in that group are running.",
-				Computed:            true,
-			},
-			"uuid": schema.StringAttribute{
-				MarkdownDescription: "The group universal unique identifier (UUID).",
-				Computed:            true,
-			},
-			"archived": schema.BoolAttribute{
-				MarkdownDescription: "Groups on the free tier go to sleep after some inactivity.",
-				Computed:            true,
-			},
-		},
-	}
+	resp.Schema = resource_group.GroupResourceSchema(ctx)
 }
 
 type groupConfigValidator struct{}
@@ -149,146 +90,171 @@ func (r *GroupResource) Configure(ctx context.Context, req resource.ConfigureReq
 		return
 	}
 
-	client, ok := req.ProviderData.(*tursoadmin.Client)
+	client, ok := req.ProviderData.(*tursoProviderConfig)
 
 	if !ok {
 		resp.Diagnostics.AddError(
 			"Unexpected Resource Configure Type",
-			fmt.Sprintf("Expected *client.Client, got: %T. Please report this issue to the provider developers.", req.ProviderData),
+			fmt.Sprintf("Expected *tursoProviderConfig, got: %T. Please report this issue to the provider developers.", req.ProviderData),
 		)
 		return
 	}
 
-	r.client = client
+	r.tursoProviderConfig = client
 }
 
 func (r *GroupResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
-	var data GroupResourceModel
-
-	// Read Terraform plan data into the model
+	var data resource_group.GroupModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
 
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	locations := make([]string, len(data.Locations))
-	for i, location := range data.Locations {
-		locations[i] = location.ValueString()
+	var rawLocations basetypes.SetValue
+	resp.Diagnostics.Append(req.Plan.GetAttribute(ctx, path.Root("locations"), &rawLocations)...)
+	if resp.Diagnostics.HasError() {
+		return
 	}
+	locations := decodeStringSet(rawLocations)
 
-	var primaryLocation string
-	if !data.Primary.IsNull() && !data.Primary.IsUnknown() {
-		primaryLocation = data.Primary.ValueString()
-	} else {
-
-		primaryLocation = locations[0]
+	primaryLocation := data.Primary.ValueString()
+	var extensions tursoclient.OptExtensions
+	if !data.Extensions.IsNull() && !data.Extensions.IsUnknown() {
+		extensions = tursoclient.NewOptExtensions(tursoclient.Extensions(data.Extensions.ValueString()))
 	}
-
-	group, err := r.client.CreateGroup(ctx, tursoadmin.CreateGroupRequest{
+	input := &tursoclient.NewGroup{
 		Name:       data.Name.ValueString(),
 		Location:   primaryLocation,
-		Extensions: tursoadmin.ExtensionsAll,
+		Extensions: extensions,
+	}
+	fmt.Printf("creating group: %+v\n", input)
+	res, err := r.Client.CreateGroup(ctx, input, tursoclient.CreateGroupParams{
+		OrganizationName: r.Organization,
 	})
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to create group, got error: %s", err.Error()))
 		return
 	}
+	groupData, ok := res.(*tursoclient.CreateGroupOK)
+	if !ok {
+		resp.Diagnostics.AddError("Client Error", "Unable to create group, got unexpected response")
+		return
+	}
+	group := groupData.Group.Value
+	fmt.Printf("created group: %+v\n", group)
 
+	fmt.Printf("adding locations: %s\n", locations)
 	for _, location := range locations {
 		if location == primaryLocation {
 			continue
 		}
-		group, err = r.client.AddGroupLocation(ctx, data.Name.ValueString(), location)
+		res, err := r.Client.AddLocationToGroup(ctx, tursoclient.AddLocationToGroupParams{
+			OrganizationName: r.Organization,
+			GroupName:        group.Name.Value,
+			Location:         location,
+		})
 		if err != nil {
 			resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to add location to group, got error: %s", err.Error()))
 			return
 		}
+		if _, ok := res.(*tursoclient.AddLocationToGroupOK); !ok {
+			resp.Diagnostics.AddError("Client Error", "Unable to add location to group, got unexpected response")
+			return
+		}
 	}
-
-	data.Name = types.StringValue(group.Name)
-	data.Primary = types.StringValue(group.PrimaryLocation)
-	data.Locations = make([]basetypes.StringValue, len(group.Locations))
-	for i, location := range group.Locations {
-		data.Locations[i] = types.StringValue(location)
-	}
-	data.Version = types.StringValue(group.Version)
-	data.UUID = types.StringValue(group.UUID)
-	data.Archived = types.BoolValue(group.Archived)
 
 	tflog.Trace(ctx, "created group resource")
-
+	resp.Diagnostics.Append(r.readGroup(ctx, group.Name.Value, &data)...)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
 func (r *GroupResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
-	var data GroupResourceModel
-
-	// Read Terraform prior state data into the model
+	var data resource_group.GroupModel
 	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
 
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	group, err := r.client.GetGroup(ctx, data.Name.ValueString())
-	if err != nil {
-		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read group, got error: %s", err.Error()))
+	resp.Diagnostics.Append(r.readGroup(ctx, data.Name.ValueString(), &data)...)
+	if resp.Diagnostics.HasError() {
 		return
 	}
-
-	data.Name = types.StringValue(group.Name)
-	data.Primary = types.StringValue(group.PrimaryLocation)
-	data.Locations = make([]basetypes.StringValue, len(group.Locations))
-	for i, location := range group.Locations {
-		data.Locations[i] = types.StringValue(location)
-	}
-	data.Version = types.StringValue(group.Version)
-	data.UUID = types.StringValue(group.UUID)
-	data.Archived = types.BoolValue(group.Archived)
-
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
 func (r *GroupResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	var data GroupResourceModel
+	var data resource_group.GroupModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	group, err := r.client.GetGroup(ctx, data.Name.ValueString())
-	if err != nil {
-		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read group, got error: %s", err.Error()))
+	var curr resource_group.GroupModel
+	resp.Diagnostics.Append(req.State.Get(ctx, &curr)...)
+	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	currentLocations := group.Locations
-	requestedLocations := make([]string, len(data.Locations))
-	for i, location := range data.Locations {
-		requestedLocations[i] = location.ValueString()
-	}
+	currentLocations := decodeStringSet(curr.Locations)
+	requestedLocations := decodeStringSet(data.Locations)
 
-	missingLocations := make([]string, 0, len(requestedLocations))
+	addLocations := make([]string, 0, len(requestedLocations))
 	for _, location := range requestedLocations {
 		if !slices.Contains(currentLocations, location) {
-			missingLocations = append(missingLocations, location)
+			addLocations = append(addLocations, location)
 		}
 	}
-
-	for _, location := range missingLocations {
-		group, err = r.client.AddGroupLocation(ctx, data.Name.ValueString(), location)
+	fmt.Printf("adding locations: %+v\n", addLocations)
+	for _, location := range addLocations {
+		res, err := r.Client.AddLocationToGroup(ctx, tursoclient.AddLocationToGroupParams{
+			OrganizationName: r.Organization,
+			GroupName:        data.Name.ValueString(),
+			Location:         location,
+		})
 		if err != nil {
 			resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to add location to group, got error: %s", err.Error()))
 			return
 		}
+		if _, ok := res.(*tursoclient.AddLocationToGroupOK); !ok {
+			resp.Diagnostics.AddError("Client Error", "Unable to add location to group, got unexpected response")
+			return
+		}
 	}
 
+	removeLocations := make([]string, 0, len(currentLocations))
+	for _, location := range currentLocations {
+		if !slices.Contains(requestedLocations, location) {
+			removeLocations = append(removeLocations, location)
+		}
+	}
+	fmt.Printf("removing locations: %+v\n", removeLocations)
+	for _, location := range removeLocations {
+		res, err := r.Client.RemoveLocationFromGroup(ctx, tursoclient.RemoveLocationFromGroupParams{
+			OrganizationName: r.Organization,
+			GroupName:        data.Name.ValueString(),
+			Location:         location,
+		})
+		if err != nil {
+			resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to remove location from group, got error: %s", err.Error()))
+			return
+		}
+		if _, ok := res.(*tursoclient.RemoveLocationFromGroupOK); !ok {
+			resp.Diagnostics.AddError("Client Error", "Unable to remove location from group, got unexpected response")
+			return
+		}
+	}
+
+	resp.Diagnostics.Append(r.readGroup(ctx, data.Name.ValueString(), &data)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
 func (r *GroupResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
-	var data GroupResourceModel
+	var data resource_group.GroupModel
 
 	// Read Terraform prior state data into the model
 	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
@@ -297,7 +263,11 @@ func (r *GroupResource) Delete(ctx context.Context, req resource.DeleteRequest, 
 		return
 	}
 
-	err := r.client.DeleteGroup(ctx, data.Name.ValueString())
+	fmt.Printf("deleting group: %+v\n", data)
+	_, err := r.Client.DeleteGroup(ctx, tursoclient.DeleteGroupParams{
+		OrganizationName: r.Organization,
+		GroupName:        data.Name.ValueString(),
+	})
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to delete group, got error: %s", err.Error()))
 		return
@@ -305,5 +275,46 @@ func (r *GroupResource) Delete(ctx context.Context, req resource.DeleteRequest, 
 }
 
 func (r *GroupResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
+	fmt.Printf("importing group: %+v\n", req)
 	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("name"), req.ID)...)
+}
+
+func (r *GroupResource) readGroup(ctx context.Context, name string, data *resource_group.GroupModel) diag.Diagnostics {
+	resp, err := r.Client.GetGroup(ctx, tursoclient.GetGroupParams{
+		OrganizationName: r.Organization,
+		GroupName:        name,
+	})
+	if err != nil {
+		return diag.Diagnostics{
+			diag.NewErrorDiagnostic("client error", err.Error()),
+		}
+	}
+	groupData, ok := resp.(*tursoclient.GetGroupOK)
+	if !ok {
+		return diag.Diagnostics{
+			diag.NewErrorDiagnostic("client error", "group not returned from server"),
+		}
+	}
+	group := groupData.Group.Value
+	fmt.Printf("read group: %+v\n", group)
+
+	data.Id = types.StringValue(group.Name.Value)
+	data.Name = types.StringValue(group.Name.Value)
+	data.Primary = types.StringValue(group.Primary.Value)
+	if data.Extensions.IsUnknown() {
+		data.Extensions = types.StringNull()
+	}
+
+	locations := encodeStringSet(mergeLists(group.Locations, []string{group.Primary.Value}))
+	data.Locations = locations
+	data.Group = resource_group.GroupValue{
+		Archived:  types.BoolValue(group.Archived.Value),
+		Name:      types.StringValue(group.Name.Value),
+		Primary:   types.StringValue(group.Primary.Value),
+		Uuid:      types.StringValue(group.UUID.Value),
+		Version:   types.StringValue(group.Version.Value),
+		Locations: locations,
+	}
+
+	return nil
 }

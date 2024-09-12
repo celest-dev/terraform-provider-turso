@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/celest-dev/terraform-provider-turso/internal/tursoadmin"
+	"github.com/celest-dev/terraform-provider-turso/internal/datasource_database"
+	"github.com/celest-dev/terraform-provider-turso/internal/tursoclient"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
-	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
@@ -18,7 +18,7 @@ func NewDatabaseDataSource() datasource.DataSource {
 
 // DatabaseDataSource defines the data source implementation.
 type DatabaseDataSource struct {
-	client *tursoadmin.Client
+	*tursoProviderConfig
 }
 
 // DatabaseDataSourceModel describes the data source data model.
@@ -35,24 +35,7 @@ func (d *DatabaseDataSource) Metadata(ctx context.Context, req datasource.Metada
 }
 
 func (d *DatabaseDataSource) Schema(ctx context.Context, req datasource.SchemaRequest, resp *datasource.SchemaResponse) {
-	resp.Schema = schema.Schema{
-		MarkdownDescription: "Database data source",
-
-		Attributes: map[string]schema.Attribute{
-			"name": schema.StringAttribute{
-				MarkdownDescription: "The name of the new database. Must contain only lowercase letters, numbers, dashes. No longer than 32 characters.",
-				Required:            true,
-			},
-			"db_id": schema.StringAttribute{
-				MarkdownDescription: "The database universal unique identifier (UUID).",
-				Computed:            true,
-			},
-			"hostname": schema.StringAttribute{
-				MarkdownDescription: "The DNS hostname used for client libSQL and HTTP connections.",
-				Computed:            true,
-			},
-		},
-	}
+	resp.Schema = datasource_database.DatabaseDataSourceSchema(ctx)
 }
 
 func (d *DatabaseDataSource) Configure(ctx context.Context, req datasource.ConfigureRequest, resp *datasource.ConfigureResponse) {
@@ -61,7 +44,7 @@ func (d *DatabaseDataSource) Configure(ctx context.Context, req datasource.Confi
 		return
 	}
 
-	client, ok := req.ProviderData.(*tursoadmin.Client)
+	config, ok := req.ProviderData.(*tursoProviderConfig)
 
 	if !ok {
 		resp.Diagnostics.AddError(
@@ -72,7 +55,7 @@ func (d *DatabaseDataSource) Configure(ctx context.Context, req datasource.Confi
 		return
 	}
 
-	d.client = client
+	d.tursoProviderConfig = config
 }
 
 func (d *DatabaseDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
@@ -85,15 +68,27 @@ func (d *DatabaseDataSource) Read(ctx context.Context, req datasource.ReadReques
 		return
 	}
 
-	res, err := d.client.GetDatabase(ctx, data.Name.ValueString())
+	res, err := d.Client.GetDatabase(ctx, tursoclient.GetDatabaseParams{
+		OrganizationName: d.Organization,
+		DatabaseName:     data.Name.ValueString(),
+	})
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read database, got error: %s", err.Error()))
 		return
 	}
+	switch res := res.(type) {
+	case *tursoclient.DatabaseNotFoundResponse:
+		resp.Diagnostics.AddError("Not Found", fmt.Sprintf("Database %s not found", data.Name.ValueString()))
+	case *tursoclient.GetDatabaseOK:
+		db, ok := res.Database.Get()
+		if !ok {
+			resp.Diagnostics.AddError("client error", "database not returned from server")
+			return
+		}
+		data.DbId = types.StringValue(db.DbId.Value)
+		data.Hostname = types.StringValue(db.Hostname.Value)
 
-	data.DbId = types.StringValue(res.ID)
-	data.Hostname = types.StringValue(res.Hostname)
-
-	// Save data into Terraform state
-	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+		// Save data into Terraform state
+		resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+	}
 }

@@ -6,13 +6,14 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/celest-dev/terraform-provider-turso/internal/tursoadmin"
+	"github.com/celest-dev/terraform-provider-turso/internal/tursoclient"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/function"
 	"github.com/hashicorp/terraform-plugin-framework/provider"
 	"github.com/hashicorp/terraform-plugin-framework/provider/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"golang.org/x/oauth2"
 )
 
 // Ensure TursoProvider satisfies various provider interfaces.
@@ -31,6 +32,12 @@ type TursoProvider struct {
 type TursoProviderModel struct {
 	Organization types.String `tfsdk:"organization"`
 	ApiToken     types.String `tfsdk:"api_token"`
+}
+
+// tursoProviderConfig holds common config for the provider.
+type tursoProviderConfig struct {
+	Organization string
+	Client       *tursoclient.Client
 }
 
 func (p *TursoProvider) Metadata(ctx context.Context, req provider.MetadataRequest, resp *provider.MetadataResponse) {
@@ -80,30 +87,33 @@ func (p *TursoProvider) Configure(ctx context.Context, req provider.ConfigureReq
 		return
 	}
 
-	client, err := tursoadmin.NewClient(tursoadmin.Config{
-		OrgName:  config.Organization.ValueString(),
-		APIToken: apiToken,
-	})
+	authClient := oauth2.NewClient(ctx, oauth2.StaticTokenSource(&oauth2.Token{AccessToken: apiToken}))
+	client, err := tursoclient.NewClient("https://api.turso.tech", tursoclient.WithClient(authClient))
 	if err != nil {
 		resp.Diagnostics.AddError(err.Error(), err.Error())
 		return
 	}
-	resp.DataSourceData = client
-	resp.ResourceData = client
+	providerConfig := &tursoProviderConfig{
+		Organization: config.Organization.ValueString(),
+		Client:       client,
+	}
+	resp.DataSourceData = providerConfig
+	resp.ResourceData = providerConfig
 }
 
 func (p *TursoProvider) Resources(ctx context.Context) []func() resource.Resource {
 	return []func() resource.Resource{
 		NewDatabaseResource,
-		NewDatabaseTokenResource,
 		NewGroupResource,
-		NewGroupTokenResource,
 	}
 }
 
 func (p *TursoProvider) DataSources(ctx context.Context) []func() datasource.DataSource {
 	return []func() datasource.DataSource{
 		NewDatabaseDataSource,
+		NewDatabaseTokenDataSource,
+		NewDatabaseInstancesDataSource,
+		NewGroupTokenDataSource,
 	}
 }
 

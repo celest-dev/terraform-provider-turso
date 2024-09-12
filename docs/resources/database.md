@@ -3,12 +3,12 @@
 page_title: "turso_database Resource - turso"
 subcategory: ""
 description: |-
-  Database resource
+  
 ---
 
 # turso_database (Resource)
 
-Database resource
+
 
 ## Example Usage
 
@@ -24,52 +24,51 @@ resource "turso_database" "example" {
 
 ### Required
 
-- `group` (String) The name of the group where the database should be created. The group must already exist.
-- `name` (String) The name of the new database. Must contain only lowercase letters, numbers, dashes. No longer than 32 characters.
+- `group` (String) The name of the group where the database should be created. **The group must already exist.**
+- `name` (String) The name of the new database. Must contain only lowercase letters, numbers, dashes. No longer than 64 characters.
 
 ### Optional
 
-- `allow_attach` (Boolean) Allow attaching databases to this database.
-- `block_reads` (Boolean) Block all read queries to the database.
-- `block_writes` (Boolean) Block all write queries to the database.
-- `is_schema` (Boolean) Mark this database as the parent schema database that updates child databases with any schema changes.
-- `schema` (String) The name of the parent database to use as the schema.
-- `seed` (Attributes) Seed configuration for the new database. (see [below for nested schema](#nestedatt--seed))
+- `id` (String) The name of the database.
+- `is_schema` (Boolean) Mark this database as the parent schema database that updates child databases with any schema changes. See [Multi-DB Schemas](/features/multi-db-schemas).
+- `schema` (String) The name of the parent database to use as the schema. See [Multi-DB Schemas](/features/multi-db-schemas).
+- `seed` (Attributes) (see [below for nested schema](#nestedatt--seed))
 - `size_limit` (String) The maximum size of the database in bytes. Values with units are also accepted, e.g. 1mb, 256mb, 1gb.
 
 ### Read-Only
 
-- `db_id` (String) The database universal unique identifier (UUID).
-- `hostname` (String) The DNS hostname used for client libSQL and HTTP connections.
-- `instances` (Attributes Map) The instance configurations for the database. (see [below for nested schema](#nestedatt--instances))
-- `primary_region` (String) The location code for the primary region this database is located.
-- `type` (String) The string representing the object type. Default: `logical`.
-- `version` (String) The current libSQL version the database is running.
+- `database` (Attributes) (see [below for nested schema](#nestedatt--database))
 
 <a id="nestedatt--seed"></a>
 ### Nested Schema for `seed`
 
-Required:
-
-- `type` (String) The type of seed to be used to create a new database.
-
 Optional:
 
 - `name` (String) The name of the existing database when `database` is used as a seed type.
-- `timestamp` (String) A formatted ISO 8601 recovery point to create a database from. This must be within the last 24 hours, or 30 days on the scaler plan.
-- `url` (String) The URL returned by [upload dump](https://docs.turso.tech/api-reference/databases/upload-dump) can be used with the `dump` seed type.
+- `timestamp` (String) A formatted [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601) recovery point to create a database from. This must be within the last 24 hours, or 30 days on the scaler plan.
+- `type` (String) The type of seed to be used to create a new database.
+- `url` (String) The URL returned by [upload dump](/api-reference/databases/upload-dump) can be used with the `dump` seed type.
 
 
-<a id="nestedatt--instances"></a>
-### Nested Schema for `instances`
+<a id="nestedatt--database"></a>
+### Nested Schema for `database`
 
 Read-Only:
 
-- `hostname` (String) The DNS hostname used for client libSQL and HTTP connections (specific to this instance only).
-- `name` (String) The name of the instance (location code).
-- `region` (String) The location code for the region this instance is located.
-- `type` (String) The type of database instance. One of: `primary` or `replica`.
-- `uuid` (String) The instance universal unique identifier (UUID).
+- `allow_attach` (Boolean) The current status for allowing the database to be attached to another.
+- `archived` (Boolean) The current status of the database. If `true`, the database is archived and requires a manual unarchive step.
+- `block_reads` (Boolean) The current status for blocked reads.
+- `block_writes` (Boolean) The current status for blocked writes.
+- `db_id` (String) The database universal unique identifier (UUID).
+- `group` (String) The name of the group the database belongs to.
+- `hostname` (String) The DNS hostname used for client libSQL and HTTP connections.
+- `is_schema` (Boolean) If this database controls other child databases then this will be `true`. See [Multi-DB Schemas](/features/multi-db-schemas).
+- `name` (String) The database name, **unique** across your organization.
+- `primary_region` (String) The primary region location code the group the database belongs to.
+- `regions` (List of String) A list of regions for the group the database belongs to.
+- `schema` (String) The name of the parent database that owns the schema for this database. See [Multi-DB Schemas](/features/multi-db-schemas).
+- `type` (String) The string representing the object type.
+- `version` (String) The current libSQL version the database is running.
 
 ## Import
 
