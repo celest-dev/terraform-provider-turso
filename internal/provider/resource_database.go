@@ -101,7 +101,7 @@ func (r *DatabaseResource) Create(ctx context.Context, req resource.CreateReques
 	}
 
 	dbName := string(db.Database.Value.Name.Value)
-	resp.Diagnostics.Append(r.readDatabase(ctx, dbName, &data)...)
+	resp.Diagnostics.Append(r.readDatabaseResource(ctx, dbName, &data)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -118,7 +118,7 @@ func (r *DatabaseResource) Read(ctx context.Context, req resource.ReadRequest, r
 		return
 	}
 
-	resp.Diagnostics.Append(r.readDatabase(ctx, data.Name.ValueString(), &data)...)
+	resp.Diagnostics.Append(r.readDatabaseResource(ctx, data.Name.ValueString(), &data)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -154,27 +154,36 @@ func (r *DatabaseResource) ImportState(ctx context.Context, req resource.ImportS
 	resource.ImportStatePassthroughID(ctx, path.Root("name"), req, resp)
 }
 
-func (r *DatabaseResource) readDatabase(ctx context.Context, name string, data *resource_database.DatabaseModel) diag.Diagnostics {
+func (r *tursoProviderConfig) readDatabase(ctx context.Context, name string) (tursoclient.Database, diag.Diagnostics) {
 	resp, err := r.Client.GetDatabase(ctx, tursoclient.GetDatabaseParams{
 		OrganizationName: r.Organization,
 		DatabaseName:     name,
 	})
 	if err != nil {
-		return diag.Diagnostics{
+		return tursoclient.Database{}, diag.Diagnostics{
 			diag.NewErrorDiagnostic("client error", err.Error()),
 		}
 	}
-	db, ok := resp.(*tursoclient.GetDatabaseOK)
+	dbData, ok := resp.(*tursoclient.GetDatabaseOK)
 	if !ok {
-		return diag.Diagnostics{
+		return tursoclient.Database{}, diag.Diagnostics{
 			diag.NewErrorDiagnostic("client error", "database not returned from server"),
 		}
 	}
+	db := dbData.Database.Value
 	fmt.Printf("read database: %+v\n", db)
+	return db, nil
+}
 
-	data.Id = types.StringValue(db.Database.Value.Name.Value)
-	data.Name = types.StringValue(db.Database.Value.Name.Value)
-	data.Group = types.StringValue(db.Database.Value.Group.Value)
+func (r *DatabaseResource) readDatabaseResource(ctx context.Context, name string, data *resource_database.DatabaseModel) diag.Diagnostics {
+	db, diags := r.readDatabase(ctx, name)
+	if diags.HasError() {
+		return diags
+	}
+
+	data.Id = types.StringValue(db.Name.Value)
+	data.Name = types.StringValue(db.Name.Value)
+	data.Group = types.StringValue(db.Group.Value)
 	if data.SizeLimit.IsUnknown() {
 		data.SizeLimit = types.StringNull()
 	}
@@ -188,20 +197,20 @@ func (r *DatabaseResource) readDatabase(ctx context.Context, name string, data *
 		data.Seed = resource_database.NewSeedValueNull()
 	}
 	dbVal, diags := resource_database.NewDatabaseValue(resource_database.DatabaseValue{}.AttributeTypes(ctx), map[string]attr.Value{
-		"db_id":          types.StringValue(db.Database.Value.DbId.Value),
-		"name":           types.StringValue(db.Database.Value.Name.Value),
-		"group":          types.StringValue(db.Database.Value.Group.Value),
-		"hostname":       types.StringValue(db.Database.Value.Hostname.Value),
-		"regions":        encodeStringList(db.Database.Value.Regions),
-		"primary_region": types.StringValue(db.Database.Value.PrimaryRegion.Value),
-		"schema":         types.StringValue(db.Database.Value.Schema.Value),
-		"is_schema":      types.BoolValue(db.Database.Value.IsSchema.Value),
-		"type":           types.StringValue(db.Database.Value.Type.Value),
-		"archived":       types.BoolValue(db.Database.Value.Archived.Value),
-		"version":        types.StringValue(db.Database.Value.Version.Value),
-		"allow_attach":   types.BoolValue(db.Database.Value.AllowAttach.Value),
-		"block_reads":    types.BoolValue(db.Database.Value.BlockReads.Value),
-		"block_writes":   types.BoolValue(db.Database.Value.BlockWrites.Value),
+		"db_id":          types.StringValue(db.DbId.Value),
+		"name":           types.StringValue(db.Name.Value),
+		"group":          types.StringValue(db.Group.Value),
+		"hostname":       types.StringValue(db.Hostname.Value),
+		"regions":        encodeStringList(db.Regions),
+		"primary_region": types.StringValue(db.PrimaryRegion.Value),
+		"schema":         types.StringValue(db.Schema.Value),
+		"is_schema":      types.BoolValue(db.IsSchema.Value),
+		"type":           types.StringValue(db.Type.Value),
+		"archived":       types.BoolValue(db.Archived.Value),
+		"version":        types.StringValue(db.Version.Value),
+		"allow_attach":   types.BoolValue(db.AllowAttach.Value),
+		"block_reads":    types.BoolValue(db.BlockReads.Value),
+		"block_writes":   types.BoolValue(db.BlockWrites.Value),
 	})
 	if diags.HasError() {
 		return diags
