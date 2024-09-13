@@ -7,6 +7,7 @@ import (
 
 	"github.com/celest-dev/terraform-provider-turso/internal/resource_group"
 	"github.com/celest-dev/terraform-provider-turso/internal/tursoclient"
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -165,7 +166,7 @@ func (r *GroupResource) Create(ctx context.Context, req resource.CreateRequest, 
 	}
 
 	tflog.Trace(ctx, "created group resource")
-	resp.Diagnostics.Append(r.readGroup(ctx, group.Name.Value, &data)...)
+	resp.Diagnostics.Append(r.readGroupResource(ctx, group.Name.Value, &data)...)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
@@ -177,7 +178,7 @@ func (r *GroupResource) Read(ctx context.Context, req resource.ReadRequest, resp
 		return
 	}
 
-	resp.Diagnostics.Append(r.readGroup(ctx, data.Name.ValueString(), &data)...)
+	resp.Diagnostics.Append(r.readGroupResource(ctx, data.Name.ValueString(), &data)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -246,7 +247,7 @@ func (r *GroupResource) Update(ctx context.Context, req resource.UpdateRequest, 
 		}
 	}
 
-	resp.Diagnostics.Append(r.readGroup(ctx, data.Name.ValueString(), &data)...)
+	resp.Diagnostics.Append(r.readGroupResource(ctx, data.Name.ValueString(), &data)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -279,24 +280,32 @@ func (r *GroupResource) ImportState(ctx context.Context, req resource.ImportStat
 	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("name"), req.ID)...)
 }
 
-func (r *GroupResource) readGroup(ctx context.Context, name string, data *resource_group.GroupModel) diag.Diagnostics {
+func (r *tursoProviderConfig) readGroup(ctx context.Context, name string) (tursoclient.BaseGroup, diag.Diagnostics) {
 	resp, err := r.Client.GetGroup(ctx, tursoclient.GetGroupParams{
 		OrganizationName: r.Organization,
 		GroupName:        name,
 	})
 	if err != nil {
-		return diag.Diagnostics{
+		return tursoclient.BaseGroup{}, diag.Diagnostics{
 			diag.NewErrorDiagnostic("client error", err.Error()),
 		}
 	}
 	groupData, ok := resp.(*tursoclient.GetGroupOK)
 	if !ok {
-		return diag.Diagnostics{
+		return tursoclient.BaseGroup{}, diag.Diagnostics{
 			diag.NewErrorDiagnostic("client error", "group not returned from server"),
 		}
 	}
 	group := groupData.Group.Value
 	fmt.Printf("read group: %+v\n", group)
+	return group, nil
+}
+
+func (r *GroupResource) readGroupResource(ctx context.Context, name string, data *resource_group.GroupModel) diag.Diagnostics {
+	group, diags := r.readGroup(ctx, name)
+	if diags.HasError() {
+		return diags
+	}
 
 	data.Id = types.StringValue(group.Name.Value)
 	data.Name = types.StringValue(group.Name.Value)
@@ -307,14 +316,13 @@ func (r *GroupResource) readGroup(ctx context.Context, name string, data *resour
 
 	locations := encodeStringSet(mergeLists(group.Locations, []string{group.Primary.Value}))
 	data.Locations = locations
-	data.Group = resource_group.GroupValue{
-		Archived:  types.BoolValue(group.Archived.Value),
-		Name:      types.StringValue(group.Name.Value),
-		Primary:   types.StringValue(group.Primary.Value),
-		Uuid:      types.StringValue(group.UUID.Value),
-		Version:   types.StringValue(group.Version.Value),
-		Locations: locations,
-	}
-
-	return nil
+	data.Group, diags = resource_group.NewGroupValue(resource_group.GroupValue{}.AttributeTypes(ctx), map[string]attr.Value{
+		"archived":  types.BoolValue(group.Archived.Value),
+		"name":      types.StringValue(group.Name.Value),
+		"primary":   types.StringValue(group.Primary.Value),
+		"uuid":      types.StringValue(group.UUID.Value),
+		"version":   types.StringValue(group.Version.Value),
+		"locations": locations,
+	})
+	return diags
 }

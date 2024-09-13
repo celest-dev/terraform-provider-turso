@@ -114,6 +114,7 @@ func (p *TursoProvider) DataSources(ctx context.Context) []func() datasource.Dat
 		NewDatabaseTokenDataSource,
 		NewDatabaseInstancesDataSource,
 		NewGroupTokenDataSource,
+		NewGroupDataSource,
 	}
 }
 

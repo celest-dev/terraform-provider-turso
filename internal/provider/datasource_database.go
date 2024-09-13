@@ -5,8 +5,9 @@ import (
 	"fmt"
 
 	"github.com/celest-dev/terraform-provider-turso/internal/datasource_database"
-	"github.com/celest-dev/terraform-provider-turso/internal/tursoclient"
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
@@ -19,15 +20,6 @@ func NewDatabaseDataSource() datasource.DataSource {
 // DatabaseDataSource defines the data source implementation.
 type DatabaseDataSource struct {
 	*tursoProviderConfig
-}
-
-// DatabaseDataSourceModel describes the data source data model.
-type DatabaseDataSourceModel struct {
-	Name types.String `tfsdk:"name"`
-
-	// Computed
-	DbId     types.String `tfsdk:"db_id"`
-	Hostname types.String `tfsdk:"hostname"`
 }
 
 func (d *DatabaseDataSource) Metadata(ctx context.Context, req datasource.MetadataRequest, resp *datasource.MetadataResponse) {
@@ -59,36 +51,41 @@ func (d *DatabaseDataSource) Configure(ctx context.Context, req datasource.Confi
 }
 
 func (d *DatabaseDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
-	var data DatabaseDataSourceModel
-
-	// Read Terraform configuration data into the model
+	var data datasource_database.DatabaseModel
 	resp.Diagnostics.Append(req.Config.Get(ctx, &data)...)
-
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	res, err := d.Client.GetDatabase(ctx, tursoclient.GetDatabaseParams{
-		OrganizationName: d.Organization,
-		DatabaseName:     data.Name.ValueString(),
-	})
-	if err != nil {
-		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read database, got error: %s", err.Error()))
+	resp.Diagnostics.Append(d.readDatabaseDataSource(ctx, data.Id.ValueString(), &data)...)
+	if resp.Diagnostics.HasError() {
 		return
 	}
-	switch res := res.(type) {
-	case *tursoclient.DatabaseNotFoundResponse:
-		resp.Diagnostics.AddError("Not Found", fmt.Sprintf("Database %s not found", data.Name.ValueString()))
-	case *tursoclient.GetDatabaseOK:
-		db, ok := res.Database.Get()
-		if !ok {
-			resp.Diagnostics.AddError("client error", "database not returned from server")
-			return
-		}
-		data.DbId = types.StringValue(db.DbId.Value)
-		data.Hostname = types.StringValue(db.Hostname.Value)
+	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+}
 
-		// Save data into Terraform state
-		resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+func (r *DatabaseDataSource) readDatabaseDataSource(ctx context.Context, name string, data *datasource_database.DatabaseModel) diag.Diagnostics {
+	db, diags := r.readDatabase(ctx, name)
+	if diags.HasError() {
+		return diags
 	}
+
+	data.Id = types.StringValue(db.Name.Value)
+	data.Database, diags = datasource_database.NewDatabaseValue(datasource_database.DatabaseValue{}.AttributeTypes(ctx), map[string]attr.Value{
+		"db_id":          types.StringValue(db.DbId.Value),
+		"name":           types.StringValue(db.Name.Value),
+		"group":          types.StringValue(db.Group.Value),
+		"hostname":       types.StringValue(db.Hostname.Value),
+		"regions":        encodeStringList(db.Regions),
+		"primary_region": types.StringValue(db.PrimaryRegion.Value),
+		"schema":         types.StringValue(db.Schema.Value),
+		"is_schema":      types.BoolValue(db.IsSchema.Value),
+		"type":           types.StringValue(db.Type.Value),
+		"archived":       types.BoolValue(db.Archived.Value),
+		"version":        types.StringValue(db.Version.Value),
+		"allow_attach":   types.BoolValue(db.AllowAttach.Value),
+		"block_reads":    types.BoolValue(db.BlockReads.Value),
+		"block_writes":   types.BoolValue(db.BlockWrites.Value),
+	})
+	return diags
 }
