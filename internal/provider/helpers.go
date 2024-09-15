@@ -68,3 +68,7 @@ func mergeLists[S ~[]E, E cmp.Ordered](a S, b S) S {
 	slices.Sort(result)
 	return result
 }
+
+func isProvided(v attr.Value) bool {
+	return !v.IsNull() && !v.IsUnknown()
+}

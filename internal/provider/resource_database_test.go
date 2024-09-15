@@ -27,6 +27,45 @@ func TestAccResourceDatabase(t *testing.T) {
 					statecheck.ExpectKnownValue("turso_database.test", tfjsonpath.New("name"), knownvalue.StringExact(name)),
 					statecheck.ExpectKnownValue("turso_database.test", tfjsonpath.New("group"), knownvalue.StringExact("test")),
 					statecheck.ExpectKnownValue("turso_database.test", tfjsonpath.New("database"), knownvalue.NotNull()),
+					statecheck.ExpectKnownValue("turso_database.test", tfjsonpath.New("allow_attach"), knownvalue.Bool(false)),
+				},
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("turso_database.test", "name", name),
+					resource.TestCheckResourceAttr("turso_database.test", "group", "test"),
+				),
+			},
+
+			// ImportState test
+			{
+				ResourceName:      "turso_database.test",
+				ImportStateId:     name,
+				ImportState:       true,
+				ImportStateVerify: true,
+			},
+		},
+	})
+}
+
+func TestAccResourceDatabaseWithConfig(t *testing.T) {
+	name := randomName()
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			// Create and Read test
+			{
+				Config: testAccCreateConfig(`
+				resource "turso_database" "test" {
+					group = "test"
+					name = "` + name + `"
+					allow_attach = true
+				}`),
+				ConfigStateChecks: []statecheck.StateCheck{
+					statecheck.ExpectKnownValue("turso_database.test", tfjsonpath.New("id"), knownvalue.StringExact(name)),
+					statecheck.ExpectKnownValue("turso_database.test", tfjsonpath.New("name"), knownvalue.StringExact(name)),
+					statecheck.ExpectKnownValue("turso_database.test", tfjsonpath.New("group"), knownvalue.StringExact("test")),
+					statecheck.ExpectKnownValue("turso_database.test", tfjsonpath.New("database"), knownvalue.NotNull()),
+					statecheck.ExpectKnownValue("turso_database.test", tfjsonpath.New("allow_attach"), knownvalue.Bool(true)),
 				},
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr("turso_database.test", "name", name),
