@@ -1,35 +1,26 @@
 provider:
   name: turso
 resources:
-  database:
-    create:
-      path: /v1/organizations/{organizationName}/databases
-      method: POST
-    read:
-      path: /v1/organizations/{organizationName}/databases/{databaseName}
-      method: GET
-    delete:
-      path: /v1/organizations/{organizationName}/databases/{databaseName}
-      method: DELETE
-    schema:
-      attributes:
-        aliases:
-          databaseName: id
-      ignores:
-        - organizationName
-  database_config:
-    create:
-      path: /v1/organizations/{organizationName}/databases/{databaseName}/configuration
-      method: PATCH
-    read:
-      path: /v1/organizations/{organizationName}/databases/{databaseName}/configuration
-      method: GET
-    schema:
-      attributes:
-        aliases:
-          databaseName: id
-      ignores:
-        - organizationName
+  # TODO: Maintained by hand for now
+  # The database config is a separate resource in the OpenAPI spec, but we want it to share
+  # the lifecycle of the database resource.
+  # database:
+  #   create:
+  #     path: /v1/organizations/{organizationName}/databases
+  #     method: POST
+  #   read:
+  #     path: /v1/organizations/{organizationName}/databases/{databaseName}
+  #     method: GET
+  #   delete:
+  #     path: /v1/organizations/{organizationName}/databases/{databaseName}
+  #     method: DELETE
+  #   schema:
+  #     attributes:
+  #       aliases:
+  #         databaseName: id
+  #     ignores:
+  #       - organizationName
+
   # TODO: Maintained by hand for now
   # The OpenAPI generator rejects the group location schemas and there is no other way
   # to add locations to a group.
@@ -83,16 +74,6 @@ data_sources:
       path: /v1/organizations/{organizationName}/databases
       method: GET
     schema:
-      ignores:
-        - organizationName
-  database_config:
-    read:
-      path: /v1/organizations/{organizationName}/databases/{databaseName}/configuration
-      method: GET
-    schema:
-      attributes:
-        aliases:
-          databaseName: id
       ignores:
         - organizationName
   database_token:

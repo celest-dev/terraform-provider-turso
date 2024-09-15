@@ -29,6 +29,9 @@ resource "turso_database" "example" {
 
 ### Optional
 
+- `allow_attach` (Boolean) Allow or disallow attaching databases to the current database.
+- `block_reads` (Boolean) Block all database reads.
+- `block_writes` (Boolean) Block all database writes.
 - `id` (String) The name of the database.
 - `is_schema` (Boolean) Mark this database as the parent schema database that updates child databases with any schema changes. See [Multi-DB Schemas](/features/multi-db-schemas).
 - `schema` (String) The name of the parent database to use as the schema. See [Multi-DB Schemas](/features/multi-db-schemas).

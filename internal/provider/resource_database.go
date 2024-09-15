@@ -66,7 +66,7 @@ func (r *DatabaseResource) Create(ctx context.Context, req resource.CreateReques
 	fmt.Printf("create database plan: %+v\n", data)
 
 	var dbSeed tursoclient.OptCreateDatabaseInputSeed
-	if !data.Seed.IsNull() && !data.Seed.IsUnknown() {
+	if isProvided(data.Seed) {
 		dbSeed = tursoclient.NewOptCreateDatabaseInputSeed(tursoclient.CreateDatabaseInputSeed{
 			Type:      tursoclient.NewOptCreateDatabaseInputSeedType(tursoclient.CreateDatabaseInputSeedType(data.Seed.SeedType.ValueString())),
 			Name:      optString(data.Seed.Name),
@@ -104,6 +104,44 @@ func (r *DatabaseResource) Create(ctx context.Context, req resource.CreateReques
 	resp.Diagnostics.Append(r.readDatabaseResource(ctx, dbName, &data)...)
 	if resp.Diagnostics.HasError() {
 		return
+	}
+
+	if isProvided(data.AllowAttach) || isProvided(data.BlockReads) || isProvided(data.BlockWrites) {
+		allowAttach := data.AllowAttach.ValueBool()
+		blockReads := data.BlockReads.ValueBool()
+		blockWrites := data.BlockWrites.ValueBool()
+
+		fmt.Printf("updating database config: allowAttach=%v, blockReads=%v, blockWrites=%v\n", allowAttach, blockReads, blockWrites)
+		_, err := r.Client.UpdateDatabaseConfiguration(ctx, &tursoclient.DatabaseConfigurationInput{
+			AllowAttach: tursoclient.OptBool{
+				Value: allowAttach,
+				Set:   isProvided(data.AllowAttach),
+			},
+			BlockReads: tursoclient.OptBool{
+				Value: blockReads,
+				Set:   isProvided(data.BlockReads),
+			},
+			BlockWrites: tursoclient.OptBool{
+				Value: blockWrites,
+				Set:   isProvided(data.BlockWrites),
+			},
+		}, tursoclient.UpdateDatabaseConfigurationParams{
+			OrganizationName: r.Organization,
+			DatabaseName:     dbName,
+		})
+		if err != nil {
+			resp.Diagnostics.AddError("error updating database configuration", err.Error())
+			return
+		}
+
+		// Update the data model with the new values
+		data.AllowAttach = types.BoolValue(allowAttach)
+		data.BlockReads = types.BoolValue(blockReads)
+		data.BlockWrites = types.BoolValue(blockWrites)
+
+		data.Database.AllowAttach = types.BoolValue(allowAttach)
+		data.Database.BlockReads = types.BoolValue(blockReads)
+		data.Database.BlockWrites = types.BoolValue(blockWrites)
 	}
 
 	tflog.Trace(ctx, "created database resource")
@@ -214,6 +252,15 @@ func (r *DatabaseResource) readDatabaseResource(ctx context.Context, name string
 	})
 	if diags.HasError() {
 		return diags
+	}
+	if !isProvided(data.AllowAttach) {
+		data.AllowAttach = types.BoolValue(dbVal.AllowAttach.ValueBool())
+	}
+	if !isProvided(data.BlockReads) {
+		data.BlockReads = types.BoolValue(dbVal.BlockReads.ValueBool())
+	}
+	if !isProvided(data.BlockWrites) {
+		data.BlockWrites = types.BoolValue(dbVal.BlockWrites.ValueBool())
 	}
 	data.Database = dbVal
 
