@@ -13,9 +13,9 @@ require (
 	github.com/hashicorp/terraform-plugin-testing v1.9.0
 	github.com/ogen-go/ogen v1.4.1
 	github.com/tursodatabase/libsql-client-go v0.0.0-20240723183952-b944339d7e70
-	go.opentelemetry.io/otel v1.29.0
-	go.opentelemetry.io/otel/metric v1.29.0
-	go.opentelemetry.io/otel/trace v1.29.0
+	go.opentelemetry.io/otel v1.33.0
+	go.opentelemetry.io/otel/metric v1.33.0
+	go.opentelemetry.io/otel/trace v1.33.0
 	go.uber.org/multierr v1.11.0
 	golang.org/x/oauth2 v0.20.0
 )
@@ -90,6 +90,7 @@ require (
 	github.com/yuin/goldmark-meta v1.1.0 // indirect
 	github.com/zclconf/go-cty v1.14.4 // indirect
 	go.abhg.dev/goldmark/frontmatter v0.2.0 // indirect
+	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
 	go.uber.org/zap v1.27.0 // indirect
 	golang.org/x/crypto v0.26.0 // indirect
 	golang.org/x/exp v0.0.0-20240719175910-8a7402abbf56 // indirect
