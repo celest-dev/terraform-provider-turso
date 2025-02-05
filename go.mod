@@ -17,7 +17,7 @@ require (
 	go.opentelemetry.io/otel/metric v1.29.0
 	go.opentelemetry.io/otel/trace v1.29.0
 	go.uber.org/multierr v1.11.0
-	golang.org/x/oauth2 v0.20.0
+	golang.org/x/oauth2 v0.26.0
 )
 
 require (
