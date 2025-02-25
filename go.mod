@@ -1,6 +1,7 @@
 module github.com/celest-dev/terraform-provider-turso
 
 go 1.22.4
+toolchain go1.23.6
 
 require (
 	github.com/go-faster/errors v0.7.1
@@ -17,7 +18,7 @@ require (
 	go.opentelemetry.io/otel/metric v1.29.0
 	go.opentelemetry.io/otel/trace v1.29.0
 	go.uber.org/multierr v1.11.0
-	golang.org/x/oauth2 v0.20.0
+	golang.org/x/oauth2 v0.27.0
 )
 
 require (
